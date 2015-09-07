@@ -2,67 +2,67 @@ from librabbitmq import Connection
 import time
 import sys, os
 sys.path.append(os.environ['QUANT_HOME'] + '/lib')
-
-import rdm
-
-r = rdm.RedisInfo()
-hostname = r.rmq['hostname']
-port = r.rmq['port']
-user = r.rmq['user']
-password = r.rmq['pass']
-vhost = r.rmq['vhost']
-exchange_name = 'quant'
-
-
+from Redis import RedisInfo
+import uuid
 
 def Connect():
-	conn = Connection(host=hostname, port=port, userid=user, password=password, virtual_host=vhost)
-	channel = conn.channel()
-	channel.exchange_declare(exchange_name, 'topic')
+	r = RedisInfo()
+	rabbitmq_cluster = 0
+	hostname, port, user, password, vhost, exchange_name, rabbitmq_number = r.rabbitmq(rabbitmq_cluster)
+	
+	try:
+		conn = Connection(host=hostname, port=port, userid=user, password=password, virtual_host=vhost)
+	except Exception, e:
+		print "Exception :", e
+		rabbitmq_cluster = 1
+		hostname, port, user, password, vhost, exchange_name, rabbitmq_number = r.rabbitmq(rabbitmq_cluster)
+		print hostname, port
+		conn = Connection(host=hostname, port=port, userid=user, password=password, virtual_host=vhost)
 
+
+	#queueId = "quantq"
+	channel = conn.channel()
+	channel.exchange_declare(exchange_name, type='direct', durable=True, )
+
+	#channel.queue_declare( 'bloom', exclusive=True, auto_delete=False, durable =True )
+	
+	n = 0
 	while True:
-		s = r.grp['state']
+		s = r.group_list()['state']
+		n = n + 1
 
 		for x in s:
-			arg_body = """Routing Key[%s] ==================================>
+			arg_body = """Routing Key[%s, %d] ==================================>
 XKRX-CS-KR-000252,13:30:48.023942,7,290.9,123.19,90.82,79.62,937.15
 XKRX-CS-KR-000253,13:30:48.024171,7,28.84,93.29,67.13,234.64,149.7
-XKRX-CS-KR-000254,13:30:48.024337,7,248.17,118.49,1489.54,118.45,117.42
-XKRX-CS-KR-000255,13:30:48.024497,7,70.67,170.82,65.45,152.11,420.7
-XKRX-CS-KR-000256,13:30:48.034801,7,160.74,82.36,260.87,104.42,384.35
-XKRX-CS-KR-000257,13:30:48.034973,7,123.39,150.31,60.78,201.21,181.55
-XKRX-CS-KR-000100,13:30:48.035137,8,166.66,87.45,252.83,82.03,44.02
-XKRX-CS-KR-000101,13:30:48.045434,8,114.86,1023.0,37.92,65.76,61.82
-XKRX-CS-KR-000102,13:30:48.045586,8,159.16,97.96,60.07,75.29,690.15
-XKRX-CS-KR-000103,13:30:48.045730,8,23.52,133.91,44.0,107.83,533.96
-XKRX-CS-KR-000104,13:30:48.045901,8,76.62,274.25,166.57,116.48,149.1
-XKRX-CS-KR-000250,13:30:48.056203,8,105.32,254.87,158.97,21.0,59.72
-XKRX-CS-KR-000251,13:30:48.056364,8,192.7,226.26,76.02,72.7,40.53
-XKRX-CS-KR-000252,13:30:48.056520,8,138.58,138.76,89.68,41.78,175.83
-XKRX-CS-KR-000253,13:30:48.066883,8,88.67,41.84,126.81,222.26,8.98
-XKRX-CS-KR-000254,13:30:48.067103,8,156.14,126.11,46.24,24.03,57.94
-XKRX-CS-KR-000255,13:30:48.067259,8,136.01,35.25,25.29,275.88,50.33
-XKRX-CS-KR-000256,13:30:48.067416,8,136.89,10.51,197.03,200.62,238.65
-XKRX-CS-KR-000257,13:30:48.077776,8,47.36,41.77,101.75,105.99,64.56
-XKRX-CS-KR-000100,13:30:48.078006,9,26.76,231.9,104.19,117.87,24.69
-XKRX-CS-KR-000101,13:30:48.078187,9,57.14,84.92,73.62,33.72,47.86
-XKRX-CS-KR-000102,13:30:48.088561,9,21.85,120.6,538.69,58.24,1685.93
-XKRX-CS-KR-000103,13:30:48.088819,9,450.32,417.01,210.68,121.41,27.18
-XKRX-CS-KR-000104,13:30:48.088998,9,80.61,69.15,132.51,98.67,226.2
-XKRX-CS-KR-000250,13:30:48.089161,9,107.44,11.22,80.1,85.93,125.1
-XKRX-CS-KR-000251,13:30:48.099518,9,43.86,51.79,282.43,101.35,946.29
-XKRX-CS-KR-000252,13:30:48.099705,9,170.75,242.6,74.15,323.43,28.48
-XKRX-CS-KR-000253,13:30:48.099871,9,53.27,36.47,81.75,50.96,46.73
-XKRX-CS-KR-000254,13:30:48.110195,9,136.93,17.66,77.64,253.57,66.8
-XKRX-CS-KR-000255,13:30:48.110408,9,65.49,72.59,39.59,63.07,74.31
-XKRX-CS-KR-000256,13:30:48.110575,9,63.16,44.29,36.04,119.36,21.78
 XKRX-CS-KR-000257,13:30:48.110733,9,125.17,54.65,374.91,219.27,136.63
-""" % x
+""" % (x, n)
 			arg_rky = s[x]
-			print arg_rky, arg_body
-			channel.basic_publish(arg_body.replace("KR", x), exchange_name, arg_rky)
-		
-		#ime.sleep(0.1)
+			#queueId = channel.queue_declare( exclusive=True, durable =True ).queue
+			#channel.queue_bind(queueId, exchange_name, arg_rky)
+			print "RabbitMQ Cluster Number", rabbitmq_number, arg_rky, arg_body
+			try:
+
+				#self, body, exchange='', routing_key='', mandatory=False, immediate=False, **properties):
+				
+				channel.basic_publish(arg_body.replace("KR", x), '', arg_rky)
+			except Exception, e:
+				print "Exception :", e
+				exit()
+				r = RedisInfo()
+				if rabbitmq_number == 0:
+					rabbitmq_cluster = 1
+				else:
+					rabbitmq_cluster = 0
+				hostname, port, user, password, vhost, exchange_name, rabbitmq_number = r.rabbitmq(rabbitmq_cluster)
+				
+				conn = Connection(host=hostname, port=port, userid=user, password=password, virtual_host=vhost)
+				channel = conn.channel()
+				channel.exchange_declare(exchange_name, type='direct', durable=True)
+				channel.basic_publish(arg_body.replace("KR", x), '', arg_rky)
+				
+					
+		time.sleep(1)
 
 	channel.close()
 	conn.close()

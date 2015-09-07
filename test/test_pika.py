@@ -1,35 +1,44 @@
-
-
 #!/usr/bin/env python
-import sys
 import pika
+import sys, os
 
-sys.path.append("/home/ec2-user/source/Quant/component")
+import time
 
-import rdm
-r = rdm.RedisInfo()
+sys.path.append(os.environ['QUANT_HOME'] + '/lib')
+from Redis import RedisInfo
 
-arg_exchange = sys.argv[1]
-arg_queue    = sys.argv[2]
-#arg_routing_key=sys.argv[3]
-msg = sys.argv[3]
+r = RedisInfo()
+rabbitmq_cluster = 0
+hostname, port, user, password, vhost, exchange_name, rabbitmq_number = r.rabbitmq(rabbitmq_cluster)
 
-def on_connection_open():
-	pass
 
-credentials = pika.PlainCredentials( r.rmq['user'], r.rmq['pass'] )
-parameters = pika.ConnectionParameters( r.rmq['hostname'], r.rmq['port'], r.rmq['vhost'], credentials )
-#connection = pika.BlockingConnection( parameters )
-connection = pika.AsyncoreConnection(parameters, on_open_callback=callback)
+credentials = pika.PlainCredentials( user, password )
+parameters = pika.ConnectionParameters( hostname, port, vhost, credentials )
+connection = pika.BlockingConnection( parameters )
 
 channel = connection.channel()
-channel.exchange_declare( exchange = arg_exchange, type='topic' )
-routingKey=arg_queue
 
+channel.exchange_declare( exchange = exchange_name, type='direct', durable=True)
+#channel.queue_declare(queue='task_queue', durable=True)
 
-#message = raw_input("Message : ")
-channel.basic_publish(exchange = arg_exchange,
-		              #queue=arg_queue,
-                      routing_key=routingKey,
-                      body=msg)
+n = 0
+while True:
+	message = "Rabbitmq Test 12345678 %d" % n
+
+	channel.basic_publish(exchange='',
+	                      routing_key='XKRX-CS-KR',
+	                      body=message)
+	"""
+	channel.basic_publish(exchange='',
+	                      routing_key='task_queue',
+	                      body=message),
+	                      properties=pika.BasicProperties(
+	                         delivery_mode = 2, # make message persistent
+	                      ))
+	"""
+
+	print " [x] Sent %r" % (message,)
+	n = n + 1
+	time.sleep(1)
+
 connection.close()

@@ -7,7 +7,8 @@ class CallBack:
 
 	def _callback(self, m):
 		rstBody = '[' + self.process_idle.name + ', ' + str(self.process_idle.pid) + '], Class Callback === ' + str(m.body) + '\n\n'
+		print "RabbitMQ Cluster Number %s" % str(self.rabbitmq_cluster)
 		print rstBody
-		#self.channel.basic_publish(rstBody, self.exchange_name, self.csGroup)
+		#self.channel.basic_publish(rstBody, '', self.csGroup)
 		#websocket =>>>
 

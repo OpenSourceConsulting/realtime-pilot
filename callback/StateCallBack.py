@@ -1,12 +1,20 @@
 #StateCallBack.py
-import sys, os
+import sys, os, time
 
 class CallBack:
 	def __init__(self):
-		self.version = 0.1
+		self.state_callback_version = 0.1
 
 	def _callback(self, m):
-		rstBody = '[' + self.process_idle.name + ', ' + str(self.process_idle.pid) + '],  State Callback === ' + str(m.body) + '\n\n'
-		print rstBody
-		self.channel.basic_publish(rstBody, self.exchange_name, self.csGroup)
+		msg_body = m.body
+		rstBody = '[' + self.process_idle.name + ', ' + str(self.process_idle.pid) + '],  State Callback === ' + str(msg_body) + '\n\n'
 
+		print "RabbitMQ Cluster Number %s %s" % (str(self.rabbitmq_cluster), self.routingKey)
+		print m.properties, dir(m)
+		print rstBody
+		try:
+			self.channel.basic_publish(rstBody, '', self.routingKey)
+			#self.channel.basic_ack(0)
+		except Exception, e:
+			print "State Exception :", e
+		
