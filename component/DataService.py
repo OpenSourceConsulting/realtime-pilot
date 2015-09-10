@@ -22,7 +22,7 @@ def Connect():
 
 	#queueId = "quantq"
 	channel = conn.channel()
-	channel.exchange_declare(exchange_name, type='direct', durable=True, )
+	channel.exchange_declare(exchange_name, type='direct', durable=True )
 
 	#channel.queue_declare( 'bloom', exclusive=True, auto_delete=False, durable =True )
 	
@@ -44,11 +44,10 @@ XKRX-CS-KR-000257,13:30:48.110733,9,125.17,54.65,374.91,219.27,136.63
 			try:
 
 				#self, body, exchange='', routing_key='', mandatory=False, immediate=False, **properties):
-				
-				channel.basic_publish(arg_body.replace("KR", x), '', arg_rky)
+				properties = {'application_headers': {}, 'delivery_mode': 2, 'content_encoding': u'binary','content_type': u'application/x-python-serialize'}
+				channel.basic_publish(arg_body.replace("KR", x), '', arg_rky,  **properties)
 			except Exception, e:
 				print "Exception :", e
-				exit()
 				r = RedisInfo()
 				if rabbitmq_number == 0:
 					rabbitmq_cluster = 1

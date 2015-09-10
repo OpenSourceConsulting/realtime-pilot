@@ -24,14 +24,12 @@ class MyHandler(FileSystemEventHandler):
             for x in ['172.31.7.217', '172.31.7.218', '172.31.7.216']:
                 cmd = "scp -P 10022 -i /home/ec2-user/key/osc-aws-key.pem -r %s ec2-user@%s:%s" % (event.src_path, x, event.src_path)
                 std_out, std_err = execute(cmd)
-                #print pid
                 for line in std_err.readlines() :
                     if "No such file or directory" in line:
                         cmd = "ssh -p 10022 -i /home/ec2-user/key/osc-aws-key.pem ec2-user@%s \"mkdir -p %s\"" % (x, os.path.dirname(event.src_path))
                         std_out, std_err = execute(cmd)
                         cmd = "scp -P 10022 -i /home/ec2-user/key/osc-aws-key.pem -r %s ec2-user@%s:%s" % (event.src_path, x, event.src_path)
                         std_out, std_err = execute(cmd)
-
                         
             
 
