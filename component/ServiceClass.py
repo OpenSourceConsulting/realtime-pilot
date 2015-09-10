@@ -9,6 +9,8 @@ import numpy as np
 import copy
 import logging
 
+from netifaces import ifaddresses
+
 #import Daemon
 #import daemon
 #from daemon import runner
@@ -20,13 +22,30 @@ from StateCallBack import CallBack as StateCB
 from ClassCallBack import CallBack as ClassCB
 from Redis import RedisInfo 
 
+
+myaddress = ifaddresses('eth0')[2][0]['addr']
+
+service = RedisInfo().get('service')[myaddress] #state, class, data
+
 ppid = current_process()
 manager = Manager()
 managerDict = manager.dict()
-managerDict[ppid.pid] = {'pid_type':'parent', 'live':ppid.is_alive()}
+managerDict[0] = {'pid':ppid.pid, 'service':service, 'ipaddress':myaddress, 'pid_type':'parent', 'live':ppid.is_alive()}
+
+class MessageSend(object):
+	def __init__(self, host='172.31.7.216', port=5872):
+			self.host = host
+			self.port = port
+			self.context = zmq.Context.instance()
+			self.socket = self.context.socket(zmq.REQ)
+			self.socket.connect ("tcp://%s:%s" % (self.host, self.port) )
+
+	def msg_send(self, msg):
+		self.socket.send(msg)
+		self.socket.recv()
 
 class ProcessManager(object):
-	def __init__(self, host='', port=5871):
+	def __init__(self, host='0.0.0.0', port=5871):
 		self.host = host
 		self.port = port
 		self.context = zmq.Context()
@@ -74,28 +93,29 @@ class RabbitMQClass( RedisInfo ):
 			connect_check = 'True' if self.conn else 'False'
 
 	def rabbitmq_channel(self):
-		self.channel = self.conn.channel()
 		#self.channel.exchange_declare(self.exchange_name, type='direct',  passive=True, durable=True, auto_delete=False, arguments=None, nowait=False)
 		#self.queueId = self.channel.queue_declare( exclusive=True, durable =True, auto_delete=False ).queue
 		#self.channel.queue_bind(self.queueId, self.exchange_name, self.routingKey)
-		self.channel.exchange_declare( self.exchange_name, type='direct',  durable=True)
-		self.channel.queue_declare( self.queueId, exclusive=False, durable =True )
+		self.channel = self.conn.channel()
+		self.channel.exchange_declare( self.exchange_name, type='direct', durable=True)
+		self.channel.queue_declare( self.queueId, exclusive=False, durable = True)
 		#self.channel.queue_bind(self.queueId, self.exchange_name, self.routingKey)
 
-
-	def rabbitmq_publish(self, callback=None):
-		
+	def rabbitmq_publish(self, message='', callback=None):
+		properties = {'application_headers': {}, 'delivery_mode': 2, 'content_encoding': u'binary','content_type': u'application/x-python-serialize'}
 		try:
-			message = callback
-			self.channel.basic_publish(message, '', self.routingKey)
+			#message = callback
+			self.channel.basic_publish(message, '', self.routingKey, **properties)
 		except:
 			self.rabbitmq_connect()
 			self.rabbitmq_channel()
-			self.channel.basic_publish(message, '', self.routingKey)
+			self.channel.basic_publish(message, '', self.routingKey, **properties)
 
 	def rabbitmq_consume(self):
 		try:
 			self.channel.basic_consume(self.queueId, callback=self.callback)
+			
+
 		except KeyboardInterrupt:
 			self.channel.close()
 			self.conn.close()
@@ -116,10 +136,11 @@ class RabbitMQClass( RedisInfo ):
 			self.conn.close()
 
 
-class StateService( RabbitMQClass, StateCB ):
+class StateService( RabbitMQClass, StateCB, MessageSend ):
 	def __init__(self, csGroup, routingKey, process_idle):
 		RabbitMQClass.__init__(self)
 		StateCB.__init__(self) #self.callback
+		MessageSend.__init__(self) #self.callback
 		self.queueId  = routingKey
 		self.routingKey= csGroup
 		self.conn = None
@@ -133,9 +154,11 @@ class StateService( RabbitMQClass, StateCB ):
 		self.rabbitmq_close()
 
 	def callback(self, message):
-		self._callback(message)
-
-
+		m = self._callback(message)
+		#self.cannenl.basic_asc(message.delivery_tag)
+		self.msg_send(m)
+		self.rabbitmq_publish(m)
+		
 class ClassService( RabbitMQClass, ClassCB ):
 	def __init__(self, routingKey, process_idle):
 		RabbitMQClass.__init__(self)
@@ -154,7 +177,9 @@ class ClassService( RabbitMQClass, ClassCB ):
 
 	def callback(self, message):
 		#print("Body:'%s', Proeprties:'%s', DeliveryInfo:'%s'" % ( message.body, message.properties, message.delivery_info))
-		self._callback(message)
+		m = self._callback(message)
+		if m != None:
+			self.rabbitmq_publish(m)
 		#message.ack()
 		#channel.basic_publish(message.body, exchange_name, arg_rky)
 
@@ -178,7 +203,9 @@ class DataService( RabbitMQClass, DataCB ):
 	def callback(self):
 		#self.channel.basic_publish(arg_body.replace("KR", x), exchange_name, arg_rky)
 		#print("Body:'%s', Proeprties:'%s', DeliveryInfo:'%s'" % ( message.body, message.properties, message.delivery_info))
-		self._callback()
+		m = self._callback()
+		#m = self._callback(message)
+		#self.rabbitmq_publish(m)
 		#message.ack()
 		#channel.basic_publish(message.body, exchange_name, arg_rky)
 
@@ -191,8 +218,8 @@ def processStart(grp, rkey, serviceType='state'):
 	elif serviceType == 'data':
 		DataService(rkey, p).run()
 
-def main(c):
-
+def main():
+	c = service
 	s = RedisInfo().group_list()['state']
 	for x in s:
 		try:
@@ -203,13 +230,13 @@ def main(c):
 		except KeyboardInterrupt:
 			p.join()
 
-	ProcessManager(host='0.0.0', port=5871).start()
+	ProcessManager(host='0.0.0.0', port=5871).start()
 	
 if __name__ == '__main__':
 	#PIDFILE = '/tmp/quant.pid'
 	#Daemon.Daemon(pidfile = PIDFILE).runAsDaemon()
 	#with daemon.DaemonContext():
-	main(sys.argv[1])
+	main()
 	
 	"""
 	logger = logging.getLogger("DaemonLog")
