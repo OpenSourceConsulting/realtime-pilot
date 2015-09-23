@@ -1,0 +1,28 @@
+ `+` is scheduled before 1.0 release
+ `-` definitely not blocks 1.0 release (but still may be done)
+
+ Websockets:
+ + Add error pages for http polling
+ - Review ws.js, limit number of requests, introduce queue, data batching
+ - Implement pseudo peer-to-peer communication support (?)
+ + Make Push by default (probably in the 0.6 or 1.0)
+
+ Static:
+ * implement directory index
+ * implement cache
+
+ + Check EINTR in all zmq_send
+ + Check what happens on ECONNRESET, EPIPE
+ + Check working server with ZMQ_HWM's set on sockets
+ - Implement fallback routes
+ + Maintainance page
+ + Allowed methods, and max-body-size
+ + Add access logging
+ - Authentication and simple authorization
+ * Configuration reloading
+ - HTTPS
+ - Add server name-version header
+ - Configuration of zeromq devices in zerogw config
+ - Figure out how to implement SDCH
+ - Replace ugly offsetof's to SHIFT macro
+ - Add another kind of forwarding (pushing) requests for statistics

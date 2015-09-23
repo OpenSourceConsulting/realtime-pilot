@@ -1,0 +1,832 @@
+
+__meta__:
+  program-name: zerogw
+  default-config: /etc/zerogw.yaml
+  description: >
+    A HTTP to zeromq gateway. It's actually a web server which uses zeromq for
+    communication with backends.
+
+  c_std_include:
+  - ev.h
+  c_include:
+  - msgqueue.h
+  - namedoutput.h
+
+__types__:
+
+  retrymode:
+    __tags__:
+      __property__: mode
+      __default__: NoRetry
+      NoRetry: 0
+      RetryFirst: 1
+      RetryLast: 2
+    count: !Int
+      min: 0
+      default: 0
+      max: 100
+      description: >
+        Maximum number of times request will be retried. RetryFirst tag means
+        first response that will reply on the request will be used. RetryLast
+        means that if response is timed out it will not be used, even if it will
+        be answered before the second attempt is answered. Technically latter
+        works by changing request id when the response is timed out.
+
+  zmqaddr:
+    __tags__:
+      __property__: kind
+      __default__: zmq.Bind
+      zmq.Bind: 1
+      zmq.Connect: 2
+    __value__: !String ""
+
+  zmqsocket: &zmqsocket
+    __tags__:
+      __property__: kind
+      __default__: auto
+      auto: 0
+      zmq.Req: 1
+      zmq.Rep: 2
+      zmq.Push: 3
+      zmq.Pull: 4
+      zmq.Pub: 5
+      zmq.Sub: 6
+    __value__: !Array
+        element: !Struct zmqaddr
+    hwm: !UInt
+      =: 0
+      description: >
+        Zeromq high water mark for socket. Zero means no limit. Refer to zeromq
+        documentation for details
+    identity: !String
+      =: ""
+      description: >
+        Zeromq identity for the socket. Refer to zeromq documentation for
+        details
+    swap: !UInt
+      =: 0
+      description: >
+        Size of swap size for messages that exceed high water mark. Refer to
+        zeromq documentation for details
+    affinity: !UInt
+      =: 0
+      description: >
+        Thread affinity bitmap for this socket. Refer to zeromq documentation
+        for details
+    sndbuf: !UInt
+      =: 0
+      description: >
+        Underlying kernel transmit buffer size. Refer to operating system
+        documentation for the SO_SNDBUF socket option
+    rcvbuf: !UInt
+      =: 0
+      description: >
+        Underlying kernel transmit buffer size. Refer to operating system
+        documentation for the SO_RCVBUF socket option
+    linger: !UInt
+      =: 10000
+      description: >
+        Amount of time zeromq tries to send messages already put into
+        the buffers. Zerogw will probably stay alive at most this amount
+        of time when got SIGTERM. Time is expressed in miliseconds
+    _sock: !_VoidPtr ~
+    _watch: !CStruct ev_io
+    _queue: !CStruct queue_s
+
+  namedoutput:
+    <<: *zmqsocket
+    sync-interval: !UInt
+      default: 0
+      max: 86400
+      description: >
+        Server will send list of websockets which have at least one output
+        channel attached to this named output. List starts with `sync` and
+        consists of pairs of connection id and cookie. Latter is empty if no
+        cookie set. Zero means no sync messages will be sent.
+    _int: !CType namedoutput_t
+
+  listenaddr:
+    host: !String ""
+    port: !Int
+      min: 1
+      max: 65535
+      =: 80
+    unix-socket: !String ""
+    fd: !Int -1
+    backlog: !Int
+      =: 4ki
+      description: >
+        Backlog of listening socket. Your operating system can also limit this
+        value.
+    # __value__ !Convert convert_listenaddr
+
+
+  StaticResponse:
+    code: !Int
+        min: 100
+        max: 999
+        default: 200
+    status: !String "OK"
+    headers: !Mapping
+      key-element: !String ~
+      value-element: !String ~
+    body: !String |
+      <html>
+        <head>
+          <title>Untitled</title>
+        </head>
+        <body>
+          <h1>No Content Here</h1>
+        </body>
+      </html>
+
+  RoutingType:
+    __tags__:
+      __property__: kind
+      __default__: Leaf
+      Leaf: 0x0
+      Exact: 0x10
+      Prefix: 0x11
+      Suffix: 0x12
+      Hash: 0x20
+      Hash1024: 0x21
+      TrySerially: 0x31
+    __value__: !String ~
+
+  RequestField:
+    __tags__:
+      __property__: kind
+      __default__: Nothing
+      Nothing: 0
+      Uri: 1
+      Path: 2
+      Method: 3
+      Header: 4
+      Cookie: 5
+      Body: 6
+      IP: 7
+    __value__: !String ~
+    _field_index: !Int -1
+
+  Route:
+    # Common part
+    limits: &limits
+      method: !Array
+        element: !String ""
+        inheritance: replace-default
+      max-body-size: !Int
+        min: 0
+        default: 64ki
+        inheritance: yes
+    headers: !Mapping
+      key-element: !String ~
+      value-element: !String ~
+      inheritance: append-default
+    access-log:
+      format: !String
+        =: '{host} - {user} [{date}] "{request}" {status} {bytes}'
+        inheritance: yes
+      filename: !File
+        =: /var/log/zerogw/access.log
+        check-exists: no
+        check-dir: yes
+        inheritance: yes
+
+    # Static/error responses
+    responses: &responses
+      default: !Struct
+        =: StaticResponse
+        inheritance: yes
+        default:
+          code: 404
+          status: Not Found
+          headers:
+            Content-Type: text/html; charset=utf-8
+          body:
+            <html>
+              <head>
+                <title>404 Page Not Found</title>
+              </head>
+              <body>
+                <h1>404 Page Not Found</h1>
+              </body>
+            </html>
+      maintainance: !Struct
+        =: StaticResponse
+        inheritance: yes
+        default:
+          code: 503
+          status: Service Unavailable
+          headers:
+            Content-Type: text/html; charset=utf-8
+          body:
+            <html>
+              <head>
+                <title>Maintainance</title>
+              </head>
+              <body>
+                <h1>Service is in maintainance mode</h1>
+              </body>
+            </html>
+      not-found: !Struct
+        =: StaticResponse
+        inheritance: yes
+        default:
+          code: 404
+          status: Not Found
+          headers:
+            Content-Type: text/html; charset=utf-8
+          body:
+            <html>
+              <head>
+                <title>404 Page Not Found</title>
+              </head>
+              <body>
+                <h1>404 Page Not Found</h1>
+              </body>
+            </html>
+      method-not-allowed: !Struct
+        =: StaticResponse
+        inheritance: yes
+        default:
+          code: 405
+          status: Method Not Allowed
+          headers:
+            Content-Type: text/html; charset=utf-8
+          body:
+            <html>
+              <head>
+                <title>405 Method Not Allowed</title>
+              </head>
+              <body>
+                <h1>405 Method Not Allowed</h1>
+              </body>
+            </html>
+      forbidden: !Struct
+        =: StaticResponse
+        inheritance: yes
+        default:
+          code: 403
+          status: Forbidden
+          headers:
+            Content-Type: text/html; charset=utf-8
+          body:
+            <html>
+              <head>
+                <title>403 Forbidden</title>
+              </head>
+              <body>
+                <h1>403 Forbidden</h1>
+              </body>
+            </html>
+      internal-error: !Struct
+        =: StaticResponse
+        inheritance: yes
+        default:
+          code: 500
+          status: Internal Server Error
+          headers:
+            Content-Type: text/html; charset=utf-8
+          body:
+            <html>
+              <head>
+                <title>500 Internal Server Error</title>
+              </head>
+              <body>
+                <h1>500 Internal Server Error</h1>
+              </body>
+            </html>
+      service-unavailable: !Struct
+        =: StaticResponse
+        inheritance: yes
+        default:
+          code: 503
+          status: Service Unavailable
+          headers:
+            Content-Type: text/html; charset=utf-8
+          body:
+            <html>
+              <head>
+                <title>503 Service Unavailable</title>
+              </head>
+              <body>
+                <h1>503 Service Temporarily Unavailable</h1>
+              </body>
+            </html>
+      gateway-timeout: !Struct
+        =: StaticResponse
+        inheritance: yes
+        default:
+          code: 504
+          status: Gateway Timeout
+          headers:
+            Content-Type: text/html; charset=utf-8
+          body:
+            <html>
+              <head>
+                <title>504 Gateway Timeout</title>
+              </head>
+              <body>
+                <h1>504 Gateway Timeout</h1>
+              </body>
+            </html>
+
+    # Dumb maintainance page response
+    maintainance: !Bool
+      =: no
+      inheritance: yes
+
+    # Static response
+    static:
+      enabled: !Bool
+        =: no
+      root: !Dir
+        check-existence: yes
+        description: >
+          Document root for static files
+        inheritance: no
+      strip-dirs: !Int
+        default: 0
+        min: 0
+        max: 4ki
+        description: >
+          Number of directory parts to strip before appending path to document
+          root. Combining this option with prefix matching you can achieve the
+          same effect as using `alias` in other web servers and a little bit
+          more
+        inheritance: no
+      dir-index: !Bool
+        =: no
+        inheritance: yes
+        description: >
+          Whether to render directory listing page, when path ends with slash
+      index-file: !String
+        =: ""
+        description: >
+          File which will be sent when path ends with slash. Including the case
+          when there are less path components than `strip-dirs`. If it's
+          specified and not-exists 404 page will be sent, even if `dir-index`
+          is true.
+        inheritance: yes
+      single-uri: !String
+        =: ""
+        description: >
+          Send single file on every request, no matter what uri is requested.
+          Useful for dynamic/javascript-full sites. This value is served by
+          replacing uri of request. So it's relative to `root` and must start
+          with slash.
+      restrict-root: !Bool
+        =: yes
+        inheritance: yes
+        description: >
+          Restrict file accesses to root directory (including symlinks). Turn
+          this off only in trusted environment. `root` directory must not
+          contain symbolic links when this option is enabled.
+      restrict-dirs: !Array
+        element: !Dir
+          check-existence: warn
+        inheritance: replace-default
+        description: >
+          Restrict static to specified set of directories. In case you want
+          symlinks outside of document root but restricted to few directories.
+          Restrict dirs must not contain symbolic links
+      deny-suffixes: !Array
+        element: !String ~
+        inheritance: append-default
+      deny-prefixes: !Array
+        element: !String ~
+        inheritance: append-default
+      gzip-enabled: !Bool
+        default: no
+        description: >
+          Try to serve .gz file as a file when browser supports gzip encoding,
+          and such file exists
+      max-size: !Int
+        default: 1Mi
+        min: 1
+        description: >
+          Maximum file size for static file. Be carefull, it's currently fully
+          loaded into memory before being sent. So set this value low and don't
+          use zerogw for serving big static files.
+        inheritance: yes
+      # _cache: !CType url_cache_t
+
+    # Server Side Templates
+    templates:
+      enabled: !Bool
+        =: no
+      routes: !Mapping
+        key-element: !String
+        value-element: !Struct zmqsocket
+        description: >
+          Zeromq routes for requests, internal for the template
+        inheritance: append-default
+      root: !Dir
+        check-existence: yes
+        description: >
+          Root directory for templates
+        inheritance: no
+      strip-dirs: !Int
+        default: 0
+        min: 0
+        max: 4ki
+        description: >
+          Number of directory parts to strip before appending path to document
+          root. Combining this option with prefix matching you can achieve the
+          same effect as using `alias` in other web servers and a little bit
+          more
+        inheritance: no
+      follow-symlinks: !Bool
+        =: no
+        inheritance: yes
+      cache-age: !Int
+        default: -1
+        min: 0
+        max: 31622400
+        description: >
+          Sets `Cache-Control: max-age=NUM` and `Expires` headers with
+          appropriate date. If you want more precise control of what's going on
+          set this value to -1 and use `headers` to set them as you wish.
+        inheritance: yes
+
+    # zeromq forwarding
+    zmq-forward:
+      enabled: !Bool
+        =: no
+      socket: !Struct
+        =: zmqsocket
+        inheritance: no
+      contents: !Array
+        element: !Struct RequestField
+        inherintance: replace-default
+      timeout: !Int
+        min: 0
+        default: 0
+        description: >
+          Max number of seconds request can be served, before retrying or
+          sending `gateway-timeout` error
+        inheritance: yes
+      retry: !Struct
+        =: retrymode
+        inheritance: yes
+
+    # websocket forwarding
+    # does not collide with everything else
+    websocket:
+      enabled: !Bool
+        =: no
+      allow-origins: !Array
+        element: !String
+        inheritance: replace-default
+        description: List of origins which connections are accepted from
+      access-control-max-age: !String
+        default: "86400"
+        description: Maximum number of seconds this access controls can be
+          kept in cache. Actually the value of HTTP header with same name
+      idle-ping-interval: !UInt
+        default: 120
+        min: 0
+        max: 86400
+        description: >
+          Interval to send websocket ping messages at. This allows to close
+          some broken connections faster. Value of 0 disables pings.
+      subscribe: !Struct
+        =: zmqsocket
+        inheritance: no
+      forward: !Struct
+        =: zmqsocket
+        inheritance: no
+      named-outputs: !Mapping
+        key-element: !String ~
+        value-element: !Struct namedoutput
+      heartbeat-interval: !UInt
+        default: 5
+        max: 86400
+        description: >
+          Server will send `heartbeat` messages at this interval. This is
+          intended to detect gateway crashes. Zero means no heartbeats.
+        inheritance: yes
+      topic-hash-size: !UInt
+        min: 4
+        max: 1Gi
+        default: 4ki
+        description: >
+          Size of hash table for topics. Keep it about twice of average
+          number of topics. It's not the limit of their number, but limits
+          performance (collisions are stored in a linked list)
+        inheritance: yes
+      queue-limit: !UInt
+        default: 100
+        min: 1
+        max: 1Mi
+        description: >
+          Limits number of output messages queued for single connection before
+          it will be dropped
+        inheritance: yes
+      max-backend-queue: !UInt
+        default: 1024
+        min: 0
+        max: 1Gi
+        description: >
+          Maximum number of messages outstanding in the queue to backend, while
+          can't be send to it. This limit does not include zeromq queue limit.
+          This limit works only for Push sockets with either high water mark set
+          or having no connections at the moment. Also it works when server was
+          paused by user.
+      frontend-commands:
+        enabled: !Bool no
+        commands:
+          echo:
+            enabled: !Bool yes
+          timestamp:
+            enabled: !Bool yes
+          paused:
+            enabled: !Bool
+              default: no
+              description: >
+                If this command is enabled, users will receive
+                ``ZEROGW:paused`` and ``ZEROGW:resumed`` commands when
+                control commands ``pause_websockets`` and ``resume_websockets``
+                are sent. This is useful to notify users that something
+                happens (server software updated) on the server.
+          subscribe:
+            enabled: !Bool
+              default: no
+              description: >
+                Warning: if you enable this command you can have server-less
+                communication, but your server is more vulnerable to DoS
+                attacks. You probably also want to limit topic names by
+                prefixing them by something like 'user:' or similar, in
+                all three (subscribe, unsubscribe, publish) commands
+            name: !String subscribe
+            topic-name: !String
+              default: "%s"
+              description: >
+                printf-like format for subscribed topic, can contain
+                %1$s -- command argument. Also you will probably want
+                to
+            limit: !UInt
+              default: 100
+              description: >
+                Limits number of client-defined subscriptions.
+          unsubscribe:
+            enabled: !Bool no
+            name: !String unsubscribe
+            topic-name: !String
+              default: "%s"
+              description: >
+                printf-like format for subscribed topic, can contain
+                %1$s -- command argument. Only client-defined subscriptions
+                can be removed. So you probably want to have this value
+                sychronized with subscribe's one.
+          publish:
+            enabled: !Bool
+              default: no
+              description: >
+                Warning: if you enable this command you can have server-less
+                communication, but your server is more vulnerable to DoS
+                attacks. You probably want to limit topic names by
+                prefixing them by something like 'user:' or similar, in
+                all three (subscribe, unsubscribe, publish) commands. Also some
+                of your users can confuse other users by sending bad-looking
+                messages. Also publishing messages with frontend commands is
+                not scalable to multiple boxes (zerogw instances).
+                You have been warned.
+            name: !String publish
+            topic-name: !String
+              default: "%s"
+              description: >
+                printf-like format for publishing topic, can contain
+                %1$s -- command argument. Can publish messages into any
+                topics, unless sprintf pattern contain some prefix or suffix.
+
+      disable-websocket: !Bool
+        =: no
+        description: >
+          Disable real websockets and use http polling fallback always.
+        inheritance: yes
+
+      polling-fallback:
+        enabled: !Bool
+          =: yes
+        timestamps: !Bool
+          default: no
+          description: >
+            Enable timestamp in X-Timestamp header, and time of waiting for
+            message to come inside X-Wait-Time. Former is time since epoch,
+            both are floating point seconds.
+        queue-limit: !UInt
+          default: 100
+          min: 2
+          max: 1Mi
+          description: >
+            Limits number of messages queued for single connection before it will
+            be dropped. For polling case already sent messages are not dropped until
+            the new request which says it got request comes in. So low values are
+            unlikely to work here.
+          inheritance: yes
+        max-bundle: !UInt
+          default: 1
+          min: 1
+          max: 1Mi
+          description: >
+            Number messages which could be sent in single http request
+          inheritance: yes
+        inactivity-timeout: !UInt
+          default: 120
+          min: 1
+          max: 86400
+          description: >
+            The number of seconds to wait before cleaning connection, if no
+            request has been sent. Usually slightly more value then for
+            websockets especially if using standard polling, because
+            higher latency.
+          inheritance: yes
+        max-timeout: !UInt
+          default: 11
+          min: 1
+          max: 3600
+          description: >
+            Maximum number of seconds client connection can be hanged up on the
+            server, if no data comes from backend, before it will be sent empty.
+            Some browsers and some proxies don't like high values. Client can
+            specify value less than this on per-request basis.
+          inheritance: yes
+      _heartbeat-timer: !CStruct ev_timer
+      _topics: !_VoidPtr ~
+
+    # Route keys (if multiple)
+    match: !Array
+      element: !String ~
+      inheritance: no
+    # Children routes
+    routing: !Struct
+      =: RoutingType
+      inheritance: no
+    routing-by: !Struct
+      =: RequestField
+      inheritance: no
+    map: !Mapping
+      key-element: !String ""
+      value-element: !Struct Route
+      inheritance: no
+    children: !Array
+      element: !Struct Route
+      inheritance: no
+    _child-match: !_VoidPtr ~
+
+    __inheritance__:
+      group: routing
+
+  logging: &errorlog
+    level: !Int
+      min: 0
+      max: 7
+      default: 6
+      description: >
+        Verbosity of error log
+      command-line: --log-level
+      command-line-incr: [-v, --verbose]
+      command-line-decr: [-q, --quiet]
+    warning-timeout: !Int
+      min: 0
+      max: 3600
+      default: 300
+      description: >
+        Timeout of displaying repeatable warnings
+        Very small value will flood your logfile, but very
+        big value will not make you confident when the
+        problem is gone (wait at least this timeout
+        and a minute or so on overloaded server, unless
+        you know truth by some other means)
+      command-line: [-w, --warning-timeout]
+    filename: !File
+      default: "/var/log/zerogw/error.log"
+      check-existence: no
+      check-dir: yes
+      description: >
+        Where to write error log messages. Use "-" for stderr.
+      command-line: [-e, --error-log]
+
+Server:
+  ident: !Int
+    min: 1
+    default: 1
+    description: >
+      Instance identifier. Use unique one across all your machines (and started
+      processes).
+  zmq-io-threads: !Int
+    min: 1
+    max: 64ki
+    default: 1
+    description: >
+      ZMQ IO threads to use. See zmq_init(3) for more information
+    command-line: [-z, --zmq-io-threads]
+  disk-io-threads: !Int
+    min: 0
+    max: 4ki
+    default: 1
+    description: >
+      Threads for reading from disk. You need them if you want to serve static.
+    command-line: [-d, --disk-io-threads]
+  control:
+    socket: !Struct
+      type: zmqsocket
+      descripton: >
+        Zeromq REP-type socket, which will accept commands from user. Send it
+        single message `list_commands` to get a list of all supported commands.
+  max-requests: !Int
+    min: 4
+    max: 1Gi
+    default: 4ki
+    command-line: [-m, --limit-requests]
+    description: >
+      Limits maximum of concurrent requests at any given time.  Don't make too
+      much because it allocates static buffer with word for each request
+      (And you also need some memory for requests itself). When buffer is full
+      all requests will be rejected with "service-unavailable" error (usually
+      503 status code) without parsing request.
+  max-websockets: !Int
+    min: 4
+    max: 1Gi
+    default: 4ki
+    command-line: [-M, --limit-websockets]
+    description: >
+      Limits maximum of concurrent websockets at any given time. Including
+      comet websocket-like connections. Don't make too much because it allocates
+      static buffer with word for each connection (And you also need some memory
+      for connections and queues itself). When buffer is full all connections
+      will be rejected with "service-unavailable" error (usually 503 status
+      code) without parsing handshake.
+  listen: !Array
+    element: !Struct listenaddr
+  network-timeout: !Float
+    default: 120
+    description: Amount to wait after last byte is sent before closing
+      connection. Doesn't applicable after websocket connection is established.
+
+  mime-types:
+    no-warnings: !Bool
+      default: False
+      description: >
+        Turn off mime-types warnings to make output less verbose.
+      command-line-enable: [--no-mime-warnings]
+    file: !File
+      default: /etc/mime.types
+      check-existence: yes
+      description: >
+        File which has suffix to mime type mapping
+    extra: !Mapping
+      key-element: !String ~
+      value-element: !String ~
+      description: >
+        Additional mime types, which override mappings from a file
+    no-extension: !String
+      =: "text/plain"
+      description: >
+        Default mime type for files which has no extension
+    default-type: !String
+      =: "application/octed-stream"
+      description: >
+        Default mime type for files which has extension not found in mapping
+
+  error-log: *errorlog # not struct because command-line
+  pools:
+    backend-messages: !Int
+      min: 1
+      max: 2G
+      default: 4096
+      description: >
+        For experts. Number of entities in backend messages pool
+    frontend-messages: !Int
+      min: 1
+      max: 2G
+      default: 4096
+      description: >
+        For experts. Number of entities in frontend messages pool
+    subscriptions: !Int
+      min: 1
+      max: 2G
+      default: 128
+      description: >
+        For experts. Number of entities in subscriptions pool
+
+
+Estp:
+  host-name: !String
+    =: localhost
+    description: The host name to report to ESTP, the default is localhost, no
+      hostname guessing is done
+  application-name: !String
+    =: zerogw
+    description: Name of the application for ESTP, leave as default if you have
+      only one estp instance
+  socket: !Struct zmqsocket
+  interval: !UInt
+    min: 1
+    max: 86400
+    default: 10
+    description: Interval of statistics reporting by ESTP
+
+
+Routing: !Struct Route

@@ -1,0 +1,56 @@
+angularJS를 이용한 REST Client 예제
+서버는 http//URL/msg에서 다음과 같은 리턴값을 보냄
+HTTP/1.1 200 OK
+Content-Type: application/json;charset=utf-8
+Content-Length: 57
+
+{
+	"data":{
+		"name":"Terry",
+		"city":"Seoul"
+		}
+}
+
+AngularJS 코드
+<!--
+	reference : http://www.jacopretorius.net/2013/04/using-ngresource-with-angularjs.html
+	reference : https://github.com/wprl/baucis/blob/master/examples/angular-example-resource.html
+	There are two ways to implement REST client
+	first one is using $http. It is more flexible but need more coding.
+	The other one is $resource. It is more efficient. 
+-->
+<html ng-app='jsonGetApp'>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=EUC-KR">
+  <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.2.9/angular.min.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.2.9/angular-route.min.js"></script>        
+  <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.2.9/angular-resource.js"></script>        
+	<script type="text/javascript">
+		var jsonGetApp = angular.module('jsonGetApp',['ngResource']);
+		
+		jsonGetApp.controller("MsgCtrl",["$resource","$scope","$log",function($resource,$scope,$log){
+			$scope.$log=$log;
+			$scope.jsonmsg='';
+			var msgs = $resource('/msg','',{query:{method:'GET',isArray:false}});
+			
+			$scope.sendJson = function(){
+				$log.info('sendJson has been called');
+				var result = msgs.query();
+				
+				$log.info(result);
+				$scope.jsonmsg=result;
+			}
+		}]
+			
+		);
+		
+	</script>
+</head>
+<body>
+	<div ng-controller="MsgCtrl">
+		<textarea rows="5" style="width: 100%" ng-model="jsonmsg" ></textarea>
+		<button ng-click="sendJson();">Get JSON</button>
+		{{jsonmsg}}
+	</div>
+</body>
+</html>

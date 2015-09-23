@@ -1,0 +1,109 @@
+button {
+    width: 150px;
+}
+#n_add {
+    width: auto;
+}
+
+html, body {
+    min-height: 100%;
+}
+ul {
+    list-style: none;
+}
+#loginform label {
+    width: 128px;
+    display: inline-block;
+}
+#tabs {
+    position: fixed;
+    top: 5px;
+    bottom: 5px;
+    left: 5px;
+    right: 5px;
+}
+#my_nickname:before {
+    content: "name:";
+    width: 64px;
+    display: inline-block;
+    color: gray;
+    font: 200px;
+}
+#my_mood:before {
+    content: "mood:";
+    width: 64px;
+    display: inline-block;
+    color: gray;
+}
+
+.body {
+    background-color: white;
+    position: absolute;
+    top: 64px;
+    bottom: 56px;
+    right: 300px;
+    left: 8px;
+    padding: 4px 12px 4px 12px;
+    overflow-y: auto;
+}
+
+.inputbox {
+    position: absolute;
+    bottom: 0px;
+    left: 8px;
+    right: 8px;
+}
+
+.inputbox input {
+    position: absolute;
+    left: 0px;
+    right: 158px;
+    bottom: 8px;
+    height: 32px;
+    padding-left: 12px;
+}
+
+.inputbox button {
+    position: absolute;
+    right: 0px;
+    bottom: 8px;
+}
+
+.msg .user:before {
+    content: "[";
+}
+.msg .user:after {
+    content: "]: ";
+}
+.msg .user {
+    cursor: pointer;
+    min-width: 128px;
+    display: inline-block;
+    margin-right: 6px;
+    text-align: right;
+}
+
+.userlist {
+    background-color: white;
+    position: absolute;
+    top: 64px;
+    bottom: 56px;
+    right: 8px;
+    width: 278px;
+    padding: 2px 2px 2px 2px;
+    overflow-y: auto;
+}
+.userlist .mood {
+    font-size: 75%;
+    color: gray;
+    display: block;
+}
+.userlist .user {
+    border: solid transparent 2px;
+    cursor: pointer;
+    padding: 2px 6px 2px 6px;
+}
+.userlist .user:hover {
+    border: solid gray 2px;
+}
+
