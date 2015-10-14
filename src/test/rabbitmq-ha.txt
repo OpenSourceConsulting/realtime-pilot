@@ -1,0 +1,6 @@
+Pattern	.*
+Apply to	all
+Definition	
+ha-mode:	all
+ha-sync-mode:	automatic
+Priority	0
