@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en" ng-app="AmqpApp">
+<head>
+    <title>Quant</title>
+    <link rel="stylesheet" href="/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="/css/bootstrap-theme.min.css" />
+    <link rel="stylesheet" href="/css/custom.css" />
+
+    <script type="text/javascript" src="/js/jquery-2.0.3.min.js"></script>
+    <script type="text/javascript" src="/js/bootstrap.min.js"></script>
+
+    <script type="text/javascript" src="/js/socket.io-0.9.7.min.js"></script>
+    <script type="text/javascript" src="/js/flask-socketio.js"></script>
+
+    <style type="text/css" media="screen">
+      body { padding-top: 60px; }
+    </style>
+</head>
+<body>
+    <div>
+        <div class="navbar navbar-inverse navbar-fixed-top">
+            <div class="container">
+                <div class="navbar-header">
+                    <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                    </button>
+                    <a class="navbar-brand" href="#">Quant-RealTime Test</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div ng-controller="MainCtrl" class="container">
+        <div>
+            <div class="row">
+                <div class="col-md-6">
+                    <h2>Publish a Message</h2>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6">
+                    <h5><div class="form-control" style="height: auto" id="rabbitmq_box"></div></h5>
+                </div>
+                <div class="col-md-6">
+                    <h5><div class="form-control" style="height: auto" id="redis_box"></div></h5>
+                </div>
+            </div>
+             <div class="row">
+                <div class="col-md-12">
+                    <h5><div class="form-control" style="height: auto" id="data_status"></div></h5>
+                </div>
+                <div class="col-md-12">
+                    <h5><div class="form-control" style="height: auto" id="state_status"></div></h5>
+                </div>
+                <div class="col-md-12">
+                    <h5><div class="form-control" style="height: auto" id="class_status"></div></h5>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6">
+                    <table width='100%' border=0 cellpadding="2" cellspacing="3">
+                      <tr>
+                        <td> <h3>Data Service</h3></td>
+                        <td>
+                            <select class="form-control" name="service_data" id="service_data" onchange="send()" placeholder="Message">
+                                    <option value="" selected>Select Group</option>
+                                    <option value="KR">KR</option>
+                                    <option value="AA">AA</option>
+                            </select>
+                        </td>
+                      </tr>
+                    </table>
+                    <div class="form-control" style="height: auto" id="data_box" ng-model="data_box"></div>
+                </div>
+                <div class="col-md-6">
+                    <table width='100%' border=0 cellpadding="2" cellspacing="3">
+                      <tr>
+                        <td> <h3>State Service</h3> </td>
+                        <td></td>
+                      </tr>
+                    </table>
+                    <div class="form-control" style="height: auto" id="state_box" ng-model="state_box"></div>
+                    
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-12">
+                    <table width='100%' border=0 cellpadding="2" cellspacing="3">
+                      <tr>
+                        <td><h3>Classification Service</h3> </td>
+                        <td></td>
+                      </tr>
+                    </table>
+                    <div class="form-control" style="height: 140px" id="class_box" ng-model="class_box"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
